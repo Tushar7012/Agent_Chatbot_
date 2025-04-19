@@ -38,8 +38,11 @@ body {
   padding: 2rem;
   border-radius: 12px;
   box-shadow: 0 8px 20px rgba(0,0,0,0.3);
-  width: 90%;
-  max-width: 600px;
+  width: 95%;
+  max-width: 800px;
+  height: 90vh;
+  display: flex;
+  flex-direction: column;
 }
 
 h2 {
@@ -52,6 +55,8 @@ form {
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  flex: 1;
+  height: 100%;
 }
 
 input[type="text"], select {
@@ -105,4 +110,65 @@ button:hover {
 
 .result-card p {
   line-height: 1.5;
+}
+
+#chat-box { 
+  background-color: rgba(255, 255, 255, 0.15); 
+  padding: 1rem; 
+  border-radius: 8px; 
+  height: 60vh;
+  width: 100%;
+  overflow-y: auto; 
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+  color: #ffffff; 
+  font-family: 'Roboto', sans-serif; 
+  font-size: 1rem; 
+  white-space: pre-wrap;
+  line-height: 1.5; 
+  backdrop-filter: blur(8px); 
+  border: 1px solid rgba(255,255,255,0.2);
+  text-shadow: 0px 1px 2px rgba(0,0,0,0.5);
+  letter-spacing: 0.3px;
+  flex: 1;
+}
+
+/* Message styling */
+.you-message, .bot-message {
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  animation: fadeIn 0.3s ease forwards;
+}
+
+.you-message {
+  background-color: rgba(78, 84, 200, 0.4);
+  align-self: flex-end;
+  border-left: 3px solid var(--primary-color);
+}
+
+.bot-message {
+  background-color: rgba(255, 255, 255, 0.2);
+  align-self: flex-start;
+  border-left: 3px solid var(--secondary-color);
+  max-width: 100%;
+  word-wrap: break-word;
+}
+
+strong {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+/* Make responsive for different screen sizes */
+@media (max-width: 768px) {
+  .container {
+    width: 95%;
+    padding: 1.5rem;
+    height: 85vh;
+  }
+  
+  #chat-box {
+    height: 50vh;
+  }
 }

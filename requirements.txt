@@ -5,4 +5,6 @@ langchain-community
 langgraph
 arxiv
 wikipedia
-flask
+Flask
+SpeechRecognition  # If using voice processing server-side
+pyttsx3 

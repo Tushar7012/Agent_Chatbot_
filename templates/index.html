@@ -1,34 +1,267 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Search Tool</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta charset="UTF-8" />
+    <title>Agent Chatbot</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+    <style>
+        .interruptible {
+            border-left: 4px solid #f59e0b; /* Tailwind's amber-500 */
+            padding-left: 10px;
+            margin-left: 5px;
+        }
+        .interrupted {
+            background-color: #fef08a; /* Tailwind's yellow-100 */
+            opacity: 0.7;
+        }
+        #resume-button {
+            margin-top: 10px;
+            padding: 8px 16px;
+            background-color: #3b82f6; /* Tailwind's blue-500 */
+            color: white;
+            border-radius: 0.375rem; /* Tailwind's rounded-md */
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            display: none; /* Initially hidden */
+            margin-left: auto;
+            margin-right: auto;
+            display: block;
+            text-align: center;
+        }
+        #resume-button:hover {
+            background-color: #2563eb; /* Tailwind's blue-700 */
+        }
+    </style>
 </head>
 <body>
-  <div class="container">
-    <h2>🔍 Smart Search Assistant</h2>
-    
-    <form method="POST">
-      <input type="text" name="query" placeholder="Enter your question..." required>
+    <div class="container">
+        <h2>🔍 Ask Agent</h2>
+        <form onsubmit="sendMessage(); return false;">
+            <select id="source">
+                <option value="wiki">Wikipedia</option>
+                <option value="arxiv">Arxiv</option>
+                <option value="tavily">Tavily</option>
+            </select>
+            <input type="text" id="user-input" placeholder="Ask me anything..." />
+            <button type="submit">Send</button>
+            <button id="mic-button" type="button" onclick="startVoice()">🎤</button>
+            <div id="chat-box"></div>
+        </form>
+    </div>
 
-      <select name="source" required>
-        <option value="" disabled selected>Select source</option>
-        <option value="arxiv">📚 Arxiv</option>
-        <option value="wiki">🌐 Wikipedia</option>
-        <option value="tavily">🧠 Tavily Search</option>
-      </select>
+    <script>
+        let conversationState = {
+            currentConversationId: null,
+            interruptedConversationId: null,
+            interruptedMessage: null, // Store the last interrupted message
+        };
 
-      <button type="submit">Search</button>
-    </form>
+        function appendMessage(sender, message, isInterruptible = false, conversationId = null) {
+            const log = document.getElementById("chat-box");
+            const messageElement = document.createElement("div");
+            messageElement.className = sender.toLowerCase() + "-message";
+            if (isInterruptible) {
+                messageElement.classList.add("interruptible");
+            }
+            messageElement.innerHTML = `<strong>${sender}:</strong> ${message}`;
+            messageElement.setAttribute('data-conversation-id', conversationId); // Store the ID
 
-    {% if result %}
-      <div class="result-card">
-        <h3>Result:</h3>
-        <p>{{ result }}</p>
-      </div>
-    {% endif %}
-  </div>
+            log.appendChild(messageElement);
+            log.scrollTop = log.scrollHeight; // Auto-scroll to bottom
+        }
+
+        async function sendMessage() {
+            const inputElement = document.getElementById("user-input");
+            const query = inputElement.value;
+            const source = document.getElementById("source").value;
+            if (!query) return;
+
+            appendMessage("You", query);
+            inputElement.value = "";
+
+            //  Crucial change:  Check for interrupted state *before* sending the new query.
+            if (conversationState.interruptedConversationId) {
+                //  The user has entered a new query *while* an explanation was interrupted.
+                //  We need to send a "stop" message to the backend, *then* send the new query.
+                console.log("Interrupting current explanation to handle new query.");
+
+                //  Send a "stop" message to the backend.
+                try {
+                    const stopResult = await fetch("/chat", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            message: "stop",
+                            conversation_id: conversationState.interruptedConversationId,
+                        }),
+                    });
+
+                    if (!stopResult.ok) {
+                        const errorText = await stopResult.text(); // Get the error message
+                        console.error("Failed to stop previous explanation:", errorText);
+                        appendMessage("Bot", "Error: Failed to stop previous explanation. Please try again."); // Inform user
+                        conversationState.interruptedConversationId = null; // Clear
+                        conversationState.interruptedMessage = null;
+                        //document.getElementById("resume-button").style.display = "none";
+                        return; // Stop processing.
+                    }
+                } catch (error) {
+                    console.error("Error sending stop message:", error);
+                    appendMessage("Bot", "Error: Network error while stopping explanation.");
+                    conversationState.interruptedConversationId = null; // Clear
+                    conversationState.interruptedMessage = null;
+                    //document.getElementById("resume-button").style.display = "none";
+                    return;
+                }
+
+
+                //  *Now* send the new query.
+                try{
+                    const res = await fetch("/chat", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ message: query, source: source }),
+                    });
+
+                    if (!res.ok) {
+                        const errorText = await res.text();
+                        console.error("Error sending new query:", errorText);
+                        appendMessage("Bot", "Error processing your query. Please try again.");
+                        return;
+                    }
+                    const data = await res.json();
+                    let responseText = data.response;
+                    if (typeof data.response === 'object') {
+                      if (Array.isArray(data.response)) {
+                        responseText = data.response.map(item => item.content || "").join("\n\n");
+                      } else if (data.response.content) {
+                        responseText = data.response.content;
+                      } else {
+                        const extractedContent = [];
+                        function extractContent(obj) {
+                          if (!obj) return;
+                          if (typeof obj === 'object') {
+                            if (obj.content) {
+                              extractedContent.push(obj.content);
+                            }
+                            Object.values(obj).forEach(value => {
+                              if (typeof value === 'object') {
+                                extractContent(value);
+                              }
+                            });
+                          }
+                        }
+                        extractContent(data.response);
+                        if (extractedContent.length > 0) {
+                          responseText = extractedContent.join("\n\n");
+                        } else {
+                          responseText = "I found some information, but I'm having trouble formatting it properly.";
+                        }
+                      }
+                    } else {
+                      responseText = data.response;
+                    }
+                    const conversationId = Date.now();  //  Start a new conversation.
+                    conversationState.currentConversationId = conversationId;
+                    conversationState.interruptedConversationId = null;  //  Clear interruption
+                    conversationState.interruptedMessage = null;
+                    appendMessage("Bot", responseText, false, conversationId);
+                    speakText(responseText);
+                    //document.getElementById("resume-button").style.display = "none";
+                    return; //  IMPORTANT:  Return after handling the new query.
+                } catch(error){
+                    console.error("Network error sending new query", error);
+                    appendMessage("Bot", "Network error, please try again");
+                    return;
+                }
+            }
+
+            //  If we get here, there was no interruption, so handle the query normally.
+            try{
+                const res = await fetch("/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: query, source: source }),
+                });
+                 if (!res.ok) {
+                    const errorText = await res.text();
+                    console.error("Error with initial query:", errorText);
+                    appendMessage("Bot", "Error processing your request. Please try again.");
+                    return;
+                }
+                const data = await res.json();
+                let responseText;
+                 if (typeof data.response === 'object') {
+                  if (Array.isArray(data.response)) {
+                    responseText = data.response.map(item => item.content || "").join("\n\n");
+                  } else if (data.response.content) {
+                    responseText = data.response.content;
+                  } else {
+                    const extractedContent = [];
+                    function extractContent(obj) {
+                      if (!obj) return;
+                      if (typeof obj === 'object') {
+                        if (obj.content) {
+                          extractedContent.push(obj.content);
+                        }
+                        Object.values(obj).forEach(value => {
+                          if (typeof value === 'object') {
+                            extractContent(value);
+                        
+                          }
+                        });
+                      }
+                    }
+                    extractContent(data.response);
+                    if (extractedContent.length > 0) {
+                      responseText = extractedContent.join("\n\n");
+                    } else {
+                      responseText = "I found some information, but I'm having trouble formatting it properly.";
+                    }
+                  }
+                } else {
+                  responseText = data.response;
+                }
+                const isExplanation = responseText.length > 200;
+                const conversationId = Date.now();
+                conversationState.currentConversationId = conversationId; // Track current
+                if (isExplanation) {
+                    conversationState.interruptedConversationId = conversationId; // Mark as potentially interruptible
+                    conversationState.interruptedMessage = responseText;
+                }
+                appendMessage("Bot", responseText, isExplanation, conversationId);
+                speakText(responseText);
+                //if (conversationState.interruptedConversationId) {
+                //    document.getElementById("resume-button").style.display = "block";
+                //} else {
+                //    document.getElementById("resume-button").style.display = "none";
+                //}
+            } catch (error) {
+                console.error("Network error on initial query:", error);
+                appendMessage("Bot", "Network error, please try again.");
+                return;
+
+            }
+        }
+
+
+
+        function startVoice() {
+            const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            recognition.lang = "en-US";
+            recognition.start();
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                document.getElementById("user-input").value = transcript;
+                sendMessage();
+            };
+        }
+
+        function speakText(text) {
+            const speech = new SpeechSynthesisUtterance(text);
+            window.speechSynthesis.speak(speech);
+        }
+    </script>
 </body>
 </html>
